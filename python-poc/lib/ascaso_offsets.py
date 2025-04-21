@@ -111,7 +111,7 @@ MEMORY_MAP = {
         "multiplier": 10  # Multiply by 10 for storage
     },
     "standby_time": {
-        "offset": 79,
+        "offset": 84,
         "type": "u8",
         "description": "Standby time in minutes"
     },
