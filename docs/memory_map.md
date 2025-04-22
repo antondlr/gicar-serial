@@ -48,6 +48,7 @@
 | 76 | 1 | Model Information | Integer | All | Stores model number (1-8) |
 | 77 | 2 | Temperature Offset | Integer | All | Value * 10 |
 | 79 | 1 | Standby Time | Integer | All | Minutes |
+| 80 | 1 | Shot Timer Enabled | Boolean | All | 0=Disabled, 1=Enabled |
 | 81 | 1 | Parameter CE | Integer | All | |
 | 82 | 2 | Economy Temperature | Integer | All | Value * 10 |
 | 84 | 1 | Economy Timer | Integer | All | |

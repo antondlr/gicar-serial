@@ -211,7 +211,7 @@ def print_result(result, verbose=False, json_output=False):
                          "counter_XL", "counter_total"],
         "Auto Timer Settings": ["autotimer_enabled", "autotimer_h_on", "autotimer_m_on", 
                                "autotimer_h_off", "autotimer_m_off"],
-        "Other Settings": ["language", "water_connection", "coffee_group_state", "steam_state"]
+        "Other Settings": ["language", "water_connection", "coffee_group_state", "steam_state", "shot_timer_enabled"]
     }
     
     # For non-verbose mode, just show most important values

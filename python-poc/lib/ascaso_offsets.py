@@ -104,6 +104,15 @@ MEMORY_MAP = {
         "description": "Offset temperature (value/10)",
         "multiplier": 10  # Multiply by 10 for storage
     },
+    "shot_timer_enabled": {
+        "offset": 80,
+        "type": "u8",
+        "description": "Shot timer enabled",
+        "values": {
+            "enabled": "1",
+            "disabled": 0
+        }
+    },
     "standby_temperature": {
         "offset": 82,
         "type": "u16le",
