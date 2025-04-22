@@ -107,10 +107,10 @@ MEMORY_MAP = {
     "shot_timer_enabled": {
         "offset": 80,
         "type": "u8",
-        "description": "Shot timer enabled",
+        "description": "Shot timer",
         "values": {
-            "enabled": "1",
-            "disabled": 0
+            "disabled": 0,
+            "enabled": 1
         }
     },
     "standby_temperature": {
