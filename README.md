@@ -37,6 +37,69 @@ Here's an incomplete list in no particular order of nice-to-haves:
 - Support for non-ascaso machines, there _must_ be others that are compatible as the vast majority of espresso machines are Gicar based. 
 - Custom PCB would be pretty dope, i'd buy one.
 
+### Python CLI Usage
+
+**Install dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+**Reading machine state:**
+```bash
+# Read from cached state file (states/latest.txt)
+python3 python-poc/ascaso_read.py
+
+# Read from serial port (Bluetooth or USB)
+python3 python-poc/ascaso_read.py --serial-port /dev/tty.AscasoBabyT
+
+# Verbose output (all settings grouped by category)
+python3 python-poc/ascaso_read.py --verbose
+
+# JSON output
+python3 python-poc/ascaso_read.py --json
+
+# Filter results (e.g., only temperature-related values)
+python3 python-poc/ascaso_read.py --verbose --filter temp
+
+# Read custom memory offset (offset, size in bytes)
+python3 python-poc/ascaso_read.py custom 53 2
+```
+
+**Writing settings:**
+```bash
+# Power on/off
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT power on
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT power off
+
+# Set temperatures (in °C)
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT coffee-temp 93.5
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT steam-temp 140
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT standby-temp 80
+
+# Steam on/off
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT steam on
+
+# Temperature unit (C or F)
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT unit C
+
+# Dose settings (S1, S2, L1, L2 in ml)
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT dose S1 30
+
+# Pre-infusion time (S1, S2, L1, L2 in seconds, 0.0-9.9)
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT pre-infusion S1 3.0
+
+# Autotimer
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT autotimer enable
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT autotimer disable
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT autotimer set --on-time 07:00 --off-time 22:00
+
+# Dry-run mode (show command without sending)
+python3 python-poc/ascaso_write.py --read-only power on
+
+# Write to custom memory offset
+python3 python-poc/ascaso_write.py --serial-port /dev/tty.AscasoBabyT custom 53 935 2
+```
+
 ### Is this AI slop?
 
 Yes. Yes it is. But it actually works, which is kinda mind blowing. 
