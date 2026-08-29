@@ -1,0 +1,528 @@
+# Generic Gicar/Ascaso Bluetooth bridge - flashable as-is on any classic
+# ESP32 (WROOM/devkit; not S2/S3/C3, which lack classic Bluetooth). On first
+# boot it opens the "Gicar Bridge Setup" hotspot; join it, and the captive
+# portal lets you pick your WiFi network. The bridge then scans for the
+# machine's Bluetooth name (ASCASO*) and, once you've entered the machine's
+# Bluetooth pairing PIN in the "Bluetooth PIN" entity (web UI at
+# http://gicar-bridge.local or Home Assistant), pairs and exposes everything.
+# The PIN is stored in flash. There is no known universal default - it may
+# differ per unit.
+#
+# To pin WiFi credentials at build time instead, include this file as a
+# package and add ssid/password - see ascaso-bridge.yaml.
+esphome:
+  name: gicar-bridge
+  friendly_name: Gicar Bridge
+
+esp32:
+  board: esp32dev
+  watchdog_timeout: 30s
+  framework:
+    type: arduino
+    sdkconfig_options:
+      CONFIG_BT_ENABLED: "y"
+      CONFIG_BT_BLUEDROID_ENABLED: "y"
+      CONFIG_BT_CLASSIC_ENABLED: "y"
+      CONFIG_BT_SPP_ENABLED: "y"
+      CONFIG_BTDM_CTRL_MODE_BTDM: "y"
+      # Bluedroid HCI layer otherwise logs every sniff/unsniff mode change
+      # (several lines a minute while idle) as warnings.
+      CONFIG_BT_LOG_HCI_TRACE_LEVEL_WARNING: "n"
+      CONFIG_BT_LOG_HCI_TRACE_LEVEL_ERROR: "y"
+
+logger:
+  level: DEBUG
+  logs:
+    debug: INFO  # the debug component's periodic heap/device dump
+
+wifi:
+  # No credentials here: the fallback hotspot + captive portal below is the
+  # onboarding path. Credentials entered there are saved to flash and used
+  # on every later boot (and take precedence over any YAML ones).
+  ap:
+    ssid: "Gicar Bridge Setup"
+
+captive_portal:
+
+api:
+  # Debug hatch, deliberately NOT an entity: an action creates no entity in
+  # Home Assistant, so none of this shows up on a dashboard. Sends an
+  # arbitrary protocol command (without its checksum - that is appended) and
+  # logs the machine's reply in full at INFO. See python-poc/raw_cmd.py.
+  actions:
+    - action: raw_command
+      variables:
+        command: string
+      then:
+        - lambda: "id(ascaso_bridge).send_raw_command(command);"
+
+ota:
+  platform: esphome
+
+# Flush persisted settings (read interval, remembered autotimer times) to
+# flash sooner than the 60s default so a reboot doesn't lose them.
+preferences:
+  flash_write_interval: 10s
+
+# Reset-reason / uptime diagnostics - the ESP was seen rebooting overnight.
+debug:
+  update_interval: 60s
+
+web_server:
+  version: 3
+  sorting_groups:
+    - id: grp_controls
+      name: "Controls"
+      sorting_weight: 10
+    - id: grp_timer
+      name: "Auto Timer"
+      sorting_weight: 20
+    - id: grp_brewing
+      name: "Brewing"
+      sorting_weight: 30
+    - id: grp_temps
+      name: "Temperatures"
+      sorting_weight: 40
+    - id: grp_counters
+      name: "Counters"
+      sorting_weight: 50
+    - id: grp_machine
+      name: "Machine Config"
+      sorting_weight: 60
+    - id: grp_pid
+      name: "Boiler PID"
+      sorting_weight: 65
+    - id: grp_bridge
+      name: "Bridge"
+      sorting_weight: 70
+
+time:
+  - platform: sntp
+    id: sntp_time
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+gicar:
+  id: ascaso_bridge
+  device_name: "ASCASO"  # substring match on the advertised BT name; first hit wins
+  # The pairing PIN the manual gives for these machines - it is a documented
+  # default rather than a per-machine secret, so most units pair with no setup
+  # at all. If yours differs, the "Bluetooth PIN" entity overrides this and is
+  # stored in flash.
+  pin: "8483"
+  update_interval: 60s  # default only - the "Read Interval" entity overrides and persists
+  time_id: sntp_time
+
+# ---------------------------------------------------------------------------
+# Controls - everyday on/off. Left uncategorised so Home Assistant lists them
+# under "Controls" on the device page.
+# ---------------------------------------------------------------------------
+switch:
+  - platform: gicar
+    gicar_id: ascaso_bridge
+    power_state:
+      name: "Power"
+      icon: mdi:power
+      web_server: {sorting_group_id: grp_controls, sorting_weight: 1}
+    # Disable the coffee group to bring up only the steam boiler.
+    coffee_group_state:
+      name: "Coffee Group"
+      icon: mdi:coffee-maker
+      web_server: {sorting_group_id: grp_controls, sorting_weight: 2.5}
+    steam_state:
+      name: "Steam Boiler"
+      icon: mdi:kettle-steam
+      web_server: {sorting_group_id: grp_controls, sorting_weight: 2}
+    # Auto timer enable = hour/minute bytes != the 100 "not set" sentinel
+    autotimer_on_enabled:
+      name: "Auto Start"
+      icon: mdi:clock-start
+      entity_category: config
+      web_server: {sorting_group_id: grp_timer, sorting_weight: 1}
+    autotimer_off_enabled:
+      name: "Auto Shutdown"
+      icon: mdi:clock-end
+      entity_category: config
+      web_server: {sorting_group_id: grp_timer, sorting_weight: 3}
+    flush_enabled:
+      name: "Flush (XL)"
+      icon: mdi:water-sync
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 20}
+    pre_infusion_enabled:
+      name: "Pre-infusion"
+      icon: mdi:timer-cog-outline
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 21}
+    shot_timer_enabled:
+      name: "Shot Timer"
+      icon: mdi:timer-outline
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 22}
+    exposition_mode:
+      name: "Machine Exposition Mode"
+      icon: mdi:store
+      entity_category: diagnostic
+      disabled_by_default: true  # installer setting - enable per-entity in HA if ever needed
+      web_server: {sorting_group_id: grp_machine, sorting_weight: 6}
+
+button:
+  - platform: gicar
+    gicar_id: ascaso_bridge
+    read:
+      name: "Read Now"
+      icon: mdi:refresh
+      web_server: {sorting_group_id: grp_controls, sorting_weight: 3}
+    sync_clock:
+      name: "Sync Clock"
+      icon: mdi:clock-check-outline
+      entity_category: config
+      web_server: {sorting_group_id: grp_timer, sorting_weight: 5}
+    reset_counters:
+      name: "Reset Counters"
+      icon: mdi:counter
+      entity_category: config
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 9}
+    # The machine's BT module can wedge after it's been power-cycled a few
+    # times: scans stop finding it even though it's still advertising. This
+    # drops and re-inits the ESP's Bluetooth stack without touching WiFi.
+    reconnect:
+      name: "Reconnect Bluetooth"
+      icon: mdi:bluetooth-off
+      entity_category: diagnostic
+      web_server: {sorting_group_id: grp_bridge, sorting_weight: 8}
+
+  # Last resort if "Reconnect Bluetooth" doesn't bring it back - saves a trip
+  # to the plug.
+  - platform: restart
+    name: "Restart Bridge"
+    icon: mdi:restart
+    entity_category: diagnostic
+    web_server: {sorting_group_id: grp_bridge, sorting_weight: 9}
+
+datetime:
+  - platform: gicar
+    gicar_id: ascaso_bridge
+    autotimer_on_time:
+      name: "Auto Start Time"
+      icon: mdi:clock-start
+      entity_category: config
+      web_server: {sorting_group_id: grp_timer, sorting_weight: 2}
+    autotimer_off_time:
+      name: "Auto Shutdown Time"
+      icon: mdi:clock-end
+      entity_category: config
+      web_server: {sorting_group_id: grp_timer, sorting_weight: 4}
+
+text_sensor:
+  - platform: gicar
+    gicar_id: ascaso_bridge
+    serial_number:
+      name: "Serial Number"
+      icon: mdi:identifier
+      entity_category: diagnostic
+      web_server: {sorting_group_id: grp_machine, sorting_weight: 0}
+    machine_number:
+      name: "Machine Number"
+      icon: mdi:tag-outline
+      entity_category: diagnostic
+      web_server: {sorting_group_id: grp_machine, sorting_weight: 0}
+    model:
+      name: "Machine Model"
+      icon: mdi:coffee-maker-outline
+      entity_category: diagnostic
+      web_server: {sorting_group_id: grp_machine, sorting_weight: 1}
+    bluetooth_status:
+      name: "Bluetooth Status"
+      icon: mdi:bluetooth
+      entity_category: diagnostic
+      web_server: {sorting_group_id: grp_bridge, sorting_weight: 5}
+    bluetooth_device:
+      name: "Bluetooth Device"
+      icon: mdi:bluetooth-connect
+      entity_category: diagnostic
+      web_server: {sorting_group_id: grp_bridge, sorting_weight: 6}
+  - platform: debug
+    reset_reason:
+      name: "Reset Reason"
+      entity_category: diagnostic
+      web_server: {sorting_group_id: grp_bridge, sorting_weight: 2}
+
+# ---------------------------------------------------------------------------
+# Settings - entity_category: config -> "Configuration" section in HA.
+# Named so that dose + pre-infusion of the same button sort together
+# (S1 Dose, S1 Pre-infusion, S2 ..., L1 ..., L2 ...).
+# ---------------------------------------------------------------------------
+number:
+  - platform: gicar
+    gicar_id: ascaso_bridge
+    dose_S1:
+      name: "S1 Dose"
+      icon: mdi:cup
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 1}
+    pre_infusion_soak_S1:
+      name: "S1 Pre-infusion Soak"
+      icon: mdi:timer-sand
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 2.5}
+    pre_infusion_soak_S2:
+      name: "S2 Pre-infusion Soak"
+      icon: mdi:timer-sand
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 4.5}
+    pre_infusion_soak_L1:
+      name: "L1 Pre-infusion Soak"
+      icon: mdi:timer-sand
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 6.5}
+    pre_infusion_soak_L2:
+      name: "L2 Pre-infusion Soak"
+      icon: mdi:timer-sand
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 8.5}
+    pre_infusion_S1:
+      name: "S1 Pre-infusion"
+      icon: mdi:timer-sand
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 2}
+    dose_S2:
+      name: "S2 Dose"
+      icon: mdi:cup
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 3}
+    pre_infusion_S2:
+      name: "S2 Pre-infusion"
+      icon: mdi:timer-sand
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 4}
+    dose_L1:
+      name: "L1 Dose"
+      icon: mdi:cup-water
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 5}
+    pre_infusion_L1:
+      name: "L1 Pre-infusion"
+      icon: mdi:timer-sand
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 6}
+    dose_L2:
+      name: "L2 Dose"
+      icon: mdi:cup-water
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 7}
+    pre_infusion_L2:
+      name: "L2 Pre-infusion"
+      icon: mdi:timer-sand
+      entity_category: config
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 8}
+    coffee_temperature:
+      name: "Coffee Temperature"
+      icon: mdi:thermometer
+      entity_category: config
+      web_server: {sorting_group_id: grp_temps, sorting_weight: 1}
+    steam_temperature:
+      name: "Steam Temperature"
+      icon: mdi:thermometer-high
+      entity_category: config
+      web_server: {sorting_group_id: grp_temps, sorting_weight: 2}
+    offset_temperature:
+      name: "Offset Temperature"
+      icon: mdi:thermometer-plus
+      entity_category: config
+      web_server: {sorting_group_id: grp_temps, sorting_weight: 3}
+    standby_temperature:
+      name: "Standby Temperature"
+      icon: mdi:thermometer-low
+      entity_category: config
+      web_server: {sorting_group_id: grp_temps, sorting_weight: 4}
+    standby_time:
+      name: "Standby Time"
+      icon: mdi:timer-sand-complete
+      entity_category: config
+      web_server: {sorting_group_id: grp_temps, sorting_weight: 5}
+    pid_coffee_p:
+      name: "Coffee PID P"
+      icon: mdi:tune-variant
+      entity_category: config
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_pid, sorting_weight: 0}
+    pid_coffee_i:
+      name: "Coffee PID I"
+      icon: mdi:tune-variant
+      entity_category: config
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_pid, sorting_weight: 1}
+    pid_coffee_d:
+      name: "Coffee PID D"
+      icon: mdi:tune-variant
+      entity_category: config
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_pid, sorting_weight: 2}
+    pid_coffee_b:
+      name: "Coffee PID B"
+      icon: mdi:tune-variant
+      entity_category: config
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_pid, sorting_weight: 3}
+    pid_steam_p:
+      name: "Steam PID P"
+      icon: mdi:tune-variant
+      entity_category: config
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_pid, sorting_weight: 10}
+    pid_steam_i:
+      name: "Steam PID I"
+      icon: mdi:tune-variant
+      entity_category: config
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_pid, sorting_weight: 11}
+    pid_steam_d:
+      name: "Steam PID D"
+      icon: mdi:tune-variant
+      entity_category: config
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_pid, sorting_weight: 12}
+    pid_steam_b:
+      name: "Steam PID B"
+      icon: mdi:tune-variant
+      entity_category: config
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_pid, sorting_weight: 13}
+    boiler_fill_timeout:
+      name: "Machine Boiler Fill Timeout"
+      icon: mdi:timer-alert-outline
+      entity_category: diagnostic
+      disabled_by_default: true  # installer setting - enable per-entity in HA if ever needed
+      mode: box
+      web_server: {sorting_group_id: grp_machine, sorting_weight: 4}
+    parameter_ce:
+      name: "Machine Parameter CE"
+      icon: mdi:tune
+      entity_category: diagnostic
+      disabled_by_default: true  # installer setting - enable per-entity in HA if ever needed
+      mode: box
+      web_server: {sorting_group_id: grp_machine, sorting_weight: 5}
+    read_interval:
+      name: "Read Interval"
+      icon: mdi:timer-sync-outline
+      entity_category: config
+      mode: slider
+      web_server: {sorting_group_id: grp_bridge, sorting_weight: 1}
+
+text:
+  - platform: gicar
+    gicar_id: ascaso_bridge
+    pin:
+      name: "Bluetooth PIN"
+      icon: mdi:form-textbox-password
+      entity_category: config
+      web_server: {sorting_group_id: grp_bridge, sorting_weight: 7}
+
+select:
+  - platform: gicar
+    gicar_id: ascaso_bridge
+    temperature_unit:
+      name: "Temperature Unit"
+      icon: mdi:temperature-celsius
+      entity_category: config
+      web_server: {sorting_group_id: grp_temps, sorting_weight: 6}
+    model:
+      name: "Machine Model (set)"
+      icon: mdi:coffee-maker-outline
+      entity_category: diagnostic
+      disabled_by_default: true  # installer setting - enable per-entity in HA if ever needed
+      web_server: {sorting_group_id: grp_machine, sorting_weight: 1.5}
+    water_connection:
+      name: "Machine Water Supply"
+      icon: mdi:water-pump
+      entity_category: diagnostic
+      disabled_by_default: true  # installer setting - enable per-entity in HA if ever needed
+      web_server: {sorting_group_id: grp_machine, sorting_weight: 2}
+    level_probe:
+      name: "Machine Level Probe Sensitivity"
+      icon: mdi:waves
+      entity_category: diagnostic
+      disabled_by_default: true  # installer setting - enable per-entity in HA if ever needed
+      web_server: {sorting_group_id: grp_machine, sorting_weight: 3}
+
+# ---------------------------------------------------------------------------
+# Sensors - counters only; every other value is shown by its writable twin.
+# ---------------------------------------------------------------------------
+sensor:
+  - platform: gicar
+    gicar_id: ascaso_bridge
+    # XL slots: read-only, they have never been shown to accept a write.
+    pre_infusion_soak_XL:
+      name: "XL Pre-infusion Soak"
+      icon: mdi:timer-sand
+      entity_category: diagnostic
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 44}
+    pre_infusion_XL:
+      name: "XL Pre-infusion"
+      icon: mdi:timer-sand
+      entity_category: diagnostic
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_brewing, sorting_weight: 45}
+    counter_S1:
+      name: "S1 Counter"
+      icon: mdi:counter
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 1}
+    counter_S2:
+      name: "S2 Counter"
+      icon: mdi:counter
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 2}
+    counter_L1:
+      name: "L1 Counter"
+      icon: mdi:counter
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 3}
+    counter_L2:
+      name: "L2 Counter"
+      icon: mdi:counter
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 4}
+    counter_flush:
+      name: "Flush (XL) Counter"
+      icon: mdi:counter
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 5}
+    counter_total:
+      name: "Total Counter"
+      icon: mdi:sigma
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 6}
+    counter_lifetime:
+      name: "Lifetime Counter"
+      icon: mdi:sigma
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 7}
+    # Has mirrored the lifetime counter in every dump taken so far - exposed
+    # to see whether it is a true alias or its own accumulator.
+    counter_water:
+      name: "Water Counter"
+      icon: mdi:water
+      entity_category: diagnostic
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 8}
+    # Tea-equipped machines only; read zero on a Baby T Plus.
+    counter_tea_1:
+      name: "Tea 1 Counter"
+      icon: mdi:tea
+      entity_category: diagnostic
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 10}
+    counter_tea_2:
+      name: "Tea 2 Counter"
+      icon: mdi:tea
+      entity_category: diagnostic
+      disabled_by_default: true
+      web_server: {sorting_group_id: grp_counters, sorting_weight: 11}
+  - platform: uptime
+    name: "Uptime"
+    entity_category: diagnostic
+    web_server: {sorting_group_id: grp_bridge, sorting_weight: 3}
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    entity_category: diagnostic
+    update_interval: 60s
+    web_server: {sorting_group_id: grp_bridge, sorting_weight: 4}

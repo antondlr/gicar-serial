@@ -1,0 +1,19 @@
+# A personalised instance: the generic bridge (gicar-bridge.yaml)
+# plus build-time WiFi credentials from secrets.yaml so it joins the home
+# network straight away instead of going through the captive portal.
+# Everything else (entities, groups, Bluetooth discovery) lives in the base.
+packages:
+  base: !include gicar-bridge.yaml
+  # MQTT is optional - uncomment once mqtt_broker/mqtt_username/mqtt_password
+  # exist in secrets.yaml (it spams reconnect attempts without a broker).
+  # mqtt: !include mqtt.yaml
+
+esphome:
+  name: ascaso-bridge
+  friendly_name: Ascaso Baby T
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Ascaso Bridge Setup"

@@ -1,0 +1,8 @@
+# Optional MQTT support - split out so it's a one-line toggle in
+# ascaso-bridge.yaml (comment/uncomment the `packages: mqtt:` line) instead of
+# adding/removing this whole block. Needs mqtt_broker/mqtt_username/
+# mqtt_password in secrets.yaml.
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_username
+  password: !secret mqtt_password

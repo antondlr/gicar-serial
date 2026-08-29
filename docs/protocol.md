@@ -105,7 +105,7 @@ Some values have specific transformations:
 
 ### Example Read Request
 ```
-r000500D7E7
+r000500D712
 ```
 ### Example Read Response
 ```

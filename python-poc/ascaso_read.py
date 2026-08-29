@@ -143,7 +143,17 @@ class AscasoReader:
                 value = self.get_value(key)
                 if value is not None:
                     result[key] = value
-        
+
+        # Derived values (see ascaso_offsets.py)
+        model_raw = extract_value(self.payload, MEMORY_MAP["model"]["offset"] - self.offset_adjustment, "u8")
+        select = result.get("offset_temperature_register_select")
+        alt = result.get("offset_temperature_alt")
+        if model_raw is not None and select is not None and alt is not None and "group1_temperature_offset" in result:
+            if select == 0 or model_raw >= 5:
+                result["offset_temperature"] = result["group1_temperature_offset"]
+            else:
+                result["offset_temperature"] = (alt - 99) / 10
+
         return result
 
 def print_value(key, value, indent=0):
@@ -207,11 +217,14 @@ def print_result(result, verbose=False, json_output=False):
         "Dose Settings": ["dose_S1", "dose_S2", "dose_L1", "dose_L2", "flush_enabled"],
         "Pre-infusion Settings": ["pre_infusion_enabled", "pre_infusion_S1", "pre_infusion_S2", 
                                 "pre_infusion_L1", "pre_infusion_L2"],
-        "Counter Values": ["counter_S1", "counter_S2", "counter_L1", "counter_L2", 
-                         "counter_XL", "counter_total"],
-        "Auto Timer Settings": ["autotimer_enabled", "autotimer_h_on", "autotimer_m_on", 
+        "Counter Values": ["counter_S1", "counter_S2", "counter_L1", "counter_L2",
+                         "counter_flush", "counter_total", "counter_lifetime"],
+        "Auto Timer Settings": ["autotimer_h_on", "autotimer_m_on",
                                "autotimer_h_off", "autotimer_m_off"],
-        "Other Settings": ["language", "water_connection", "coffee_group_state", "steam_state", "shot_timer_enabled"]
+        "Machine Config": ["level_probe", "boiler_fill_timeout", "parameter_ce", "exposition_mode",
+                           "offset_temperature_register_select", "offset_temperature_alt",
+                           "group1_temperature_offset", "group3_enabled"],
+        "Other Settings": ["water_connection", "coffee_group_state", "steam_state", "shot_timer_enabled"]
     }
     
     # For non-verbose mode, just show most important values
@@ -227,8 +240,8 @@ def print_result(result, verbose=False, json_output=False):
         print("\nCounters:")
         print("  S1: {}, S2: {}".format(result.get('counter_S1', 0), result.get('counter_S2', 0)))
         print("  L1: {}, L2: {}".format(result.get('counter_L1', 0), result.get('counter_L2', 0)))
-        print("  XL: {}".format(result.get('counter_XL', 0)))
-        print("  Total: {}".format(result.get('counter_total', 0)))
+        print("  Flush: {}".format(result.get('counter_flush', 0)))
+        print("  Total: {}, Lifetime: {}".format(result.get('counter_total', 0), result.get('counter_lifetime', 0)))
         
         print("\nUse --verbose for complete information")
         return

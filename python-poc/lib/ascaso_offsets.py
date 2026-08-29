@@ -20,16 +20,6 @@ MEMORY_MAP = {
             "big_dream_3": "value == 8"
         }
     },
-    "language": {
-        "offset": 36,
-        "type": "u8",
-        "description": "Language",
-        "values": {
-            "lang1": "1",
-            "lang2": "2",
-            "unknown": "value > 2"
-        }
-    },
 
     # Machine states
     # get:   if (nibbleAdapter.getCharAt(STATO_MACCHINA_ADDRESS) <= 4) {
@@ -89,6 +79,17 @@ MEMORY_MAP = {
         "default": 93,
         "multiplier": 10  # Multiply by 10 for storage
     },
+    # Boiler PID parameters: four u16s directly after each boiler setpoint,
+    # matching the four (P/I/d/b) the machine's programming menu exposes.
+    # Scaling undocumented.
+    "pid_coffee_p": {"offset": 55, "type": "u16le", "description": "Coffee boiler PID P"},
+    "pid_coffee_i": {"offset": 57, "type": "u16le", "description": "Coffee boiler PID I"},
+    "pid_coffee_d": {"offset": 59, "type": "u16le", "description": "Coffee boiler PID d"},
+    "pid_coffee_b": {"offset": 61, "type": "u16le", "description": "Coffee boiler PID b"},
+    "pid_steam_p": {"offset": 65, "type": "u16le", "description": "Steam boiler PID P"},
+    "pid_steam_i": {"offset": 67, "type": "u16le", "description": "Steam boiler PID I"},
+    "pid_steam_d": {"offset": 69, "type": "u16le", "description": "Steam boiler PID d"},
+    "pid_steam_b": {"offset": 71, "type": "u16le", "description": "Steam boiler PID b"},
     "steam_temperature": {
         "offset": 63,
         "type": "u16le", 
@@ -98,12 +99,29 @@ MEMORY_MAP = {
         "default": 125,
         "multiplier": 10  # Multiply by 10 for storage
     },
-    "offset_temperature": {
-        "offset": 77, ## this is wrong
-        "type": "u16le",
-        "description": "Offset temperature (value/10)",
-        "multiplier": 10  # Multiply by 10 for storage
+    # "Offset temperature" as the machine displays it is
+    #   (byte79 == 0 or model >= 5) ? u16@89 / 10 : (u16@77 - 99) / 10
+    # i.e. byte 79 selects which register is live. Both raw registers are
+    # exposed here; ascaso_read.py derives the displayed value as
+    # "offset_temperature". (An earlier version read 77/10 unconditionally.)
+    "offset_temperature_register_select": {
+        "offset": 79,
+        "type": "u8",
+        "description": "0 = offset temperature lives at 89, non-zero = at 77"
     },
+    "offset_temperature_alt": {
+        "offset": 77,
+        "type": "u16le",
+        "description": "Alt offset temperature register: (value - 99) / 10, only live when byte 79 != 0"
+    },
+    "group1_temperature_offset": {
+        "offset": 89,
+        "type": "u16le",
+        "description": "Group 1 temperature offset (value/10), the normal offset-temperature register",
+        "multiplier": 10
+    },
+    # From the original project notes. Reads consistently with the machine
+    # menu; write unverified.
     "shot_timer_enabled": {
         "offset": 80,
         "type": "u8",
@@ -116,12 +134,14 @@ MEMORY_MAP = {
     "standby_temperature": {
         "offset": 82,
         "type": "u16le",
-        "description": "Standby temperature (value/10)",
+        "description": "Standby (economy) temperature (value/10), 80-125",
         "multiplier": 10  # Multiply by 10 for storage
     },
     "standby_time": {
+        # u16, not u8 - a u8 read here silently drops the high byte
+        # (offset 85) whenever the real value needs it.
         "offset": 84,
-        "type": "u8",
+        "type": "u16le",
         "description": "Standby time in minutes"
     },
     
@@ -151,26 +171,35 @@ MEMORY_MAP = {
         "multiplier": 2
     },
 
+    # Offset fixed to 38 (was 43), verified on hardware.
     "flush_enabled": {
-        "offset": 43,
+        "offset": 38,
         "type": "u8",
         "description": "flush enabled flag",
         "values": {
-            "enabled": "1",
+            "enabled": 1,
             "disabled": 0
         }
     },
 
     # Pre-infusion settings
+    # Offset fixed to 40 (was 45), verified on hardware.
     "pre_infusion_enabled": {
-        "offset": 45,
+        "offset": 40,
         "type": "u8",
         "description": "Pre-infusion enabled flag",
         "values": {
-            "enabled": "1",
+            "enabled": 1,
             "disabled": 0
         }
     },
+    # Pump-OFF (soak) time per selection - 3.0 s on every dump taken.
+    "pre_infusion_soak_S1": {"offset": 41, "type": "u8", "multiplier": 10, "description": "S1 pump-off soak time"},
+    "pre_infusion_soak_S2": {"offset": 42, "type": "u8", "multiplier": 10, "description": "S2 pump-off soak time"},
+    "pre_infusion_soak_L1": {"offset": 43, "type": "u8", "multiplier": 10, "description": "L1 pump-off soak time"},
+    "pre_infusion_soak_L2": {"offset": 44, "type": "u8", "multiplier": 10, "description": "L2 pump-off soak time"},
+    # Experimental: fifth slot of each array, i.e. the XL selection. Both read 0.
+    "pre_infusion_soak_XL": {"offset": 45, "type": "u8", "multiplier": 10, "description": "XL pump-off soak time (experimental)"},
     "pre_infusion_S1": {
         "offset": 46,
         "type": "u8",
@@ -190,6 +219,7 @@ MEMORY_MAP = {
         "description": "L1 pre-infusion time in seconds (value/10)",
         "multiplier": 10
     },
+    "pre_infusion_XL": {"offset": 50, "type": "u8", "multiplier": 10, "description": "XL pre-infusion (experimental)"},
     "pre_infusion_L2": {
         "offset": 49,
         "type": "u8",
@@ -201,17 +231,19 @@ MEMORY_MAP = {
     "water_connection": {
         "offset": 87,
         "type": "u8",
-        "description": "Water connection type",
+        "description": "Water supply (0 = direct connection, 1 = tank)",
         "values": {
             "direct": 0,
             "tank": 1
         }
     },
-    # Auto on-off timer settings
-    "autotimer_enabled": {
+    # Auto on-off timer settings. There is NO enable flag on a Baby T: the
+    # machine treats hour/minute == 100 as "not set" and disabling writes
+    # 100/100. Byte 126 is "Group 3 enable" on the multi-group models.
+    "group3_enabled": {
         "offset": 126,
         "type": "u8",
-        "description": "Power timer enabled",
+        "description": "Group 3 enable (model 5+ only; not the autotimer flag)",
         "values": {
             "enabled": 1,
             "disabled": 0
@@ -220,7 +252,7 @@ MEMORY_MAP = {
     "autotimer_h_on": {
         "offset": 127,
         "type": "u8",
-        "description": "Power timer on hour"
+        "description": "Power timer on hour (100 = not set)"
     },
     "autotimer_m_on": {
         "offset": 128,
@@ -230,7 +262,7 @@ MEMORY_MAP = {
     "autotimer_h_off": {
         "offset": 129,
         "type": "u8",
-        "description": "Power timer off hour"
+        "description": "Power timer off hour (100 = not set)"
     },
     "autotimer_m_off": {
         "offset": 130,
@@ -238,50 +270,64 @@ MEMORY_MAP = {
         "description": "Power timer off minute"
     },
 
-    # Counter values (`COUNT_K*_GR1_ADDRESS`)
-    "counter_S1": {
-        "offset": 134,
-        "type": "u16le",
-        "description": "S1 counter",
-        "readonly": True
+    # Counter values - 4-byte slots (a reset writes u32 zeros). Slot 5 (150)
+    # is the flush / continuous ("XL") button counter.
+    "counter_S1": {"offset": 134, "type": "u32le", "description": "S1 counter", "readonly": True},
+    "counter_S2": {"offset": 138, "type": "u32le", "description": "S2 counter", "readonly": True},
+    "counter_L1": {"offset": 142, "type": "u32le", "description": "L1 counter", "readonly": True},
+    "counter_L2": {"offset": 146, "type": "u32le", "description": "L2 counter", "readonly": True},
+    "counter_flush": {"offset": 150, "type": "u32le", "description": "Flush (continuous) counter", "readonly": True},
+    # The machine's own resettable total (its counter menu's running total).
+    "counter_total": {"offset": 206, "type": "u32le", "description": "Total counter", "readonly": True},
+    # Lifetime total; a counter reset leaves this one alone.
+    "counter_lifetime": {"offset": 210, "type": "u32le", "description": "Lifetime counter", "readonly": True},
+    # Has mirrored counter_lifetime exactly in every dump taken so far.
+    "serial_number": {"offset": 34, "type": "u16le", "description": "Serial number", "readonly": True},
+    "counter_water": {"offset": 214, "type": "u32le", "description": "Water counter", "readonly": True},
+    # Tea counters use 4-byte slots like the button counters; zero on a Baby T Plus.
+    "counter_tea_1": {"offset": 194, "type": "u32le", "description": "Tea 1 counter", "readonly": True},
+    "counter_tea_2": {"offset": 198, "type": "u32le", "description": "Tea 2 counter", "readonly": True},
+
+    # Barista/Big Dream (model >= 5) settings that the vendor app never shows
+    # for a Baby T. They read back plausibly on a Baby T.
+    "level_probe": {
+        "offset": 33,
+        "type": "u8",
+        "description": "Water level probe sensitivity",
+        "values": {
+            "low": 0,
+            "medium": 1,
+            "high": 2
+        }
     },
-    "counter_S2": {
-        "offset": 138,
-        "type": "u16le",
-        "description": "S2 counter",
-        "readonly": True
+    "boiler_fill_timeout": {
+        "offset": 73,
+        "type": "u8",
+        "description": "Boiler filling-up timeout (0-240)"
     },
-    "counter_L1": {
-        "offset": 142,
-        "type": "u16le",
-        "description": "L1 counter",
-        "readonly": True
+    "parameter_ce": {
+        "offset": 81,
+        "type": "u8",
+        "description": "Parameter CE (0-6; meaning unknown)"
     },
-    "counter_L2": {
-        "offset": 146,
-        "type": "u16le",
-        "description": "L2 counter",
-        "readonly": True
-    },
-    "counter_XL": {
-        "offset": 150,
-        "type": "u16le",
-        "description": "XL counter",
-        "readonly": True
-    },
-    "counter_total": {
-        "offset": 210,
-        "type": "u16le",
-        "description": "Total counter",
-        "readonly": True
+    # Showroom/demo mode (a Barista/Big Dream setting).
+    "exposition_mode": {
+        "offset": 133,
+        "type": "u8",
+        "description": "Exposition (showroom/demo) mode",
+        "values": {
+            "enabled": 1,
+            "disabled": 0
+        }
     }
 }
 
 # Machine models
 MACHINE_MODELS = {
-    1: "Baby T Zero 230V",
+    # Model names as shown by the machine / vendor app
+    1: "Baby T One 230V",
     2: "Baby T Plus 230V",
-    3: "Baby T Zero 120V",
+    3: "Baby T One 120V",
     4: "Baby T Plus 120V",
     5: "Barista T 2 Groups",
     6: "Barista T 3 Groups",

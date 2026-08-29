@@ -1,2 +1,8 @@
 __pycache__
 .venv
+python-poc/states/
+esphome/secrets.yaml
+esphome/.esphome/
+android-app/
+.claude/
+.DS_Store
