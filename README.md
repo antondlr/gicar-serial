@@ -38,6 +38,21 @@ Fair warning; while this seems to work fine for me, your machine may explode. Pr
   On first boot it opens the **Gicar Bridge Setup** WiFi hotspot with a captive portal to pick your network. Pick it, and that should be the whole setup: the pairing PIN the manual documents (`8483`) is built in, so the bridge finds any `ASCASO*` device, pairs and starts reading on its own. If your machine wants a different PIN, set it in the **Bluetooth PIN** entity at `http://gicar-bridge.local` and it's kept in flash. Add it to Home Assistant via the ESPHome integration (auto-discovered).
 - `ascaso-bridge.yaml` - example of a personalised instance: includes the generic one as a package and adds WiFi credentials + PIN from `secrets.yaml` (copy `secrets.yaml.example`).
 
+**You don't need to clone any of this.** The component is pulled straight from GitHub, so the whole config on your side is:
+
+```yaml
+packages:
+  gicar: github://antondlr/gicar-serial/esphome/gicar-bridge.yaml@v1.0.0
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+```
+
+Drop that in your ESPHome dashboard, flash it, and you're done - the pairing PIN and the machine discovery are already in the package. Pin a tag as above so upstream changes can't surprise you, or use `@main` to track development. The bridge also advertises itself for adoption in the ESPHome dashboard.
+
+`dev.yaml` is for working on the component itself: same config, but built from a local checkout so your edits take effect.
+
 What you get: power / steam boiler / coffee group switches, auto start & shutdown (on/off + HH:MM), dose, pre-infusion and pre-infusion soak per button, flush / pre-infusion / shot-timer toggles, coffee / steam / offset / standby temperatures, standby time, counters (per button, resettable total, lifetime total, reset), temperature unit, and hidden-by-default groups for the boiler PID parameters and machine config (model, water supply, level probe, boiler fill timeout, parameter CE, exposition mode). Plus clock sync from NTP, a machine restart / Bluetooth reconnect pair, and an automatic recovery reboot if the Bluetooth stack wedges. Every write is an atomic single-field write followed by a full re-read, so what you see is always the machine's actual state.
 
 There's also a `raw_command` API action (deliberately not an entity, so it adds nothing to Home Assistant) that sends an arbitrary protocol command and logs the reply - see `python-poc/raw_cmd.py`. 

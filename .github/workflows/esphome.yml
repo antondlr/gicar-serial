@@ -1,0 +1,42 @@
+name: ESPHome
+
+# Validates and compiles the bridge on every push and PR, so a tag can never
+# point at a config that does not build. The generic config pulls the
+# component from GitHub, so it is checked against the pushed tree; dev.yaml
+# builds the working copy, which is what catches a broken commit.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ESPHome
+        run: pip install esphome
+
+      - name: Validate the config
+        working-directory: esphome
+        run: esphome config dev.yaml
+
+      # Compiling is slow but it is the only thing that catches a C++ error in
+      # the component, which config validation alone will happily miss.
+      - name: Compile the firmware
+        working-directory: esphome
+        run: esphome compile dev.yaml
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: gicar-bridge-firmware
+          path: esphome/.esphome/build/gicar-bridge/.pioenvs/gicar-bridge/firmware.bin
+          if-no-files-found: warn

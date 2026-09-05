@@ -13,6 +13,15 @@
 esphome:
   name: gicar-bridge
   friendly_name: Gicar Bridge
+  project:
+    name: antondlr.gicar-bridge
+    version: "1.0.0"
+
+# Lets ESPHome offer this device for adoption in the dashboard, and tells it
+# where the config came from so it can be updated in place.
+dashboard_import:
+  package_import_url: github://antondlr/gicar-serial/esphome/gicar-bridge.yaml@main
+  import_full_config: false
 
 esp32:
   board: esp32dev
@@ -100,10 +109,13 @@ time:
   - platform: sntp
     id: sntp_time
 
+# Pulled straight from GitHub so this file works as a remote package - nobody
+# needs to clone the repo to build it. Pin a tag rather than `main` if you
+# would rather not be moved by upstream changes. For local development on the
+# component itself, use dev.yaml, which overrides this with a local path.
 external_components:
-  - source:
-      type: local
-      path: components
+  - source: github://antondlr/gicar-serial@v1.0.0
+    components: [gicar]
 
 gicar:
   id: ascaso_bridge

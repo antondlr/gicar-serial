@@ -1,0 +1,14 @@
+# Local development config: identical to gicar-bridge.yaml but builds the
+# component from the working tree instead of GitHub, so edits take effect
+# without pushing. Flash with:
+#   esphome run dev.yaml --device gicar-bridge.local
+packages:
+  base: !include gicar-bridge.yaml
+
+# Overrides the package's GitHub source. ESPHome merges lists, so the local
+# entry is listed first and wins for the `gicar` component.
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [gicar]
